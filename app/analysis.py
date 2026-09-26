@@ -99,16 +99,22 @@ def _to_plane_roots(coeffs_ascending: list[float]) -> tuple[list[complex], float
     c0=...=c_{k-1}=0 时多项式等价于 z^-k 乘一个首项非零的多项式，
     z=0 处补 k 个根，增益取第一个非零系数。末端零系数对应 z=无穷大
     处的根，不影响有限频响，直接剥离。
+
+    近零判定相对系数最大模取值（而非绝对阈值）：高阶巴特沃斯在极端
+    截止下分子整体可小到 1e-13 量级，绝对阈值会把真系数误剥掉。
     """
+    top = max(abs(c) for c in coeffs_ascending)
+    threshold = 1e-15 * top
+
     leading_zeros = 0
     for coefficient in coeffs_ascending:
-        if abs(coefficient) < 1e-15:
+        if abs(coefficient) < threshold:
             leading_zeros += 1
         else:
             break
 
     trailing = len(coeffs_ascending)
-    while trailing > 1 and abs(coeffs_ascending[trailing - 1]) < 1e-15:
+    while trailing > 1 and abs(coeffs_ascending[trailing - 1]) < threshold:
         trailing -= 1
     trimmed = coeffs_ascending[leading_zeros:trailing]
     if not trimmed:

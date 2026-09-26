@@ -1,4 +1,4 @@
-"""手写多项式求根（Durand-Kerner + Newton 精修）单元测试。"""
+"""手写多项式求根（Aberth-Ehrlich 同时迭代 + 重根验证合并）单元测试。"""
 
 from __future__ import annotations
 
@@ -84,3 +84,68 @@ def test_roots_invalid_inputs():
         roots_polynomial([])
     with pytest.raises(ValueError):
         roots_polynomial([0.0, 0.0, 0.0])
+
+
+def test_roots_high_multiplicity_at_minus_one():
+    # (1 + z^-1)^16：16 重根在双精度下散开不可分辨，应合并回 -1 且严格为实
+    coeffs = poly_from_roots([-1.0] * 16)
+    roots = roots_polynomial([c.real for c in coeffs])
+    assert len(roots) == 16
+    for root in roots:
+        assert root == pytest.approx(-1.0 + 0j, abs=1e-9)
+
+
+def test_roots_mixed_multiplicities():
+    # (1+z^-1)^5 * (1-0.3z^-1) * (1-0.7z^-1)：重根与单根并存
+    coeffs = poly_from_roots([-1.0] * 5)
+    coeffs = poly_multiply(coeffs, [1.0, -0.3])
+    coeffs = poly_multiply(coeffs, [1.0, -0.7])
+    roots = roots_polynomial([c.real for c in coeffs])
+    assert len(roots) == 7
+    at_minus_one = [r for r in roots if abs(r + 1.0) < 1e-9]
+    assert len(at_minus_one) == 5
+    for target in (0.3, 0.7):
+        assert min(abs(r - target) for r in roots) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_roots_conjugate_paired_for_real_coefficients():
+    # 分离的复根对 + 近重根对 + 实根：输出必须共轭成对到 1e-9
+    pair = 0.8 * cmath.exp(1j * 0.7)
+    close_pair = [-1.0 + 0.02j, -1.0 - 0.02j]
+    targets = [pair, pair.conjugate(), *close_pair, 0.5 + 0j, -0.25 + 0j]
+    coeffs = poly_from_roots(targets)
+    roots = roots_polynomial([c.real for c in coeffs])
+    assert len(roots) == len(targets)
+    remaining = list(roots)
+    for root in roots:
+        if abs(root.imag) < 1e-12:
+            continue
+        partner = min(remaining, key=lambda r: abs(r - root.conjugate()))
+        assert abs(partner - root.conjugate()) == pytest.approx(0.0, abs=1e-9)
+        remaining.remove(partner)
+
+
+def test_roots_reciprocal_conjugate_quadruple():
+    # 线性相位 FIR 的典型根结构：r e^{±jθ} 与 r^-1 e^{±jθ} 四元组
+    angle = 0.9
+    targets = [
+        2.5 * cmath.exp(1j * angle),
+        2.5 * cmath.exp(-1j * angle),
+        0.4 * cmath.exp(1j * angle),
+        0.4 * cmath.exp(-1j * angle),
+    ]
+    coeffs = poly_from_roots(targets)
+    roots = roots_polynomial([c.real for c in coeffs])
+    for target in targets:
+        assert min(abs(r - target) for r in roots) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_roots_all_real_distinct():
+    # 全部根为实根（共轭初值对的伪平衡情形）：2、-3、0.5、1.2、-0.4
+    coeffs = [1.0]
+    for root in (2.0, -3.0, 0.5, 1.2, -0.4):
+        coeffs = poly_multiply(coeffs, [1.0, -root])
+    roots = roots_polynomial(coeffs)
+    assert len(roots) == 5
+    for target in (2.0, -3.0, 0.5, 1.2, -0.4):
+        assert min(abs(r - target) for r in roots) == pytest.approx(0.0, abs=1e-9)
